@@ -1,0 +1,30 @@
+/*
+O3D - Model Viewer for Flutter
+WebView로 Google의 <model-viewer> 웹 컴포넌트를 임베드한 위젯
+*/
+
+import 'package:flutter/material.dart';
+import 'package:o3d/o3d.dart';
+
+class ModelViewerScreen extends StatelessWidget {
+  final String modelPath;
+  const ModelViewerScreen({super.key, required this.modelPath});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('3D 모델 뷰어 - o3d'),
+        centerTitle: true,
+      ),
+      body: Center(
+        child: O3D(
+          src: modelPath,
+          autoRotate: true,
+          // enableCameraControl: true,
+          backgroundColor: Colors.white,
+        ),
+      ),
+    );
+  }
+}

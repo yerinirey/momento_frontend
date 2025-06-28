@@ -1,6 +1,14 @@
+// lib/screens/scan_screen.dart
+
+import 'dart:math';
 import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart';
-import 'dart:io';
+import 'package:camera/camera.dart';
+import 'package:provider/provider.dart';
+
+import '../providers/image_store.dart';
+import '../providers/moment_store.dart';
+import 'confirm_scan_screen.dart';
+import 'moments_screen.dart';
 
 class ScanScreen extends StatefulWidget {
   const ScanScreen({super.key});
@@ -10,292 +18,205 @@ class ScanScreen extends StatefulWidget {
 }
 
 class _ScanScreenState extends State<ScanScreen> {
-  final ImagePicker _picker = ImagePicker();
-  final List<File> _capturedImages = [];
-  String _objectName = '';
+  late CameraController _controller;
+  late Future<void> _initFuture;
+  bool _isCapturing = false;
 
-  final List<String> _angleLabels = [
+  final List<String> _labels = [
     'Front View',
     'Back View',
     'Left Side',
     'Right Side',
     'Top View',
-    'Bottom View'
+    'Bottom View',
   ];
 
   @override
+  void initState() {
+    super.initState();
+    _initFuture = _setupCamera();
+  }
+
+  Future<void> _setupCamera() async {
+    final cameras = await availableCameras();
+    final camera = cameras.firstWhere(
+      (c) => c.lensDirection == CameraLensDirection.back,
+      orElse: () => cameras.first,
+    );
+    _controller = CameraController(
+      camera,
+      ResolutionPreset.high,
+      enableAudio: false,
+    );
+    await _controller.initialize();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Future<void> _takePhoto() async {
+    final imageStore = context.read<ImageStore>();
+    if (_isCapturing || imageStore.images.length >= _labels.length) return;
+
+    setState(() => _isCapturing = true);
+    try {
+      final photo = await _controller.takePicture();
+      imageStore.addImage(photo.path);
+    } catch (e) {
+      debugPrint('사진 촬영 에러: $e');
+    } finally {
+      setState(() => _isCapturing = false);
+    }
+  }
+
+  void _goBackStep() {
+    final imageStore = context.read<ImageStore>();
+    imageStore.removeLast();
+  }
+
+  Future<void> _completeScan() async {
+    final imageStore = context.read<ImageStore>();
+    final momentStore = context.read<MomentStore>();
+    final images = imageStore.images;
+    if (images.isEmpty) return;
+
+    // 확인버튼 눌렀을 때 ConfirmScanScreen으로 이동
+    final confirmed = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => ConfirmScanScreen(imagePaths: images),
+      ),
+    );
+    if (confirmed != true) {
+      // 1. 다시 찍기
+      return;
+    }
+
+    // 2. 확인
+    // 첫 번째 사진을 대표 이미지로 삼아 MomentsScreen에 모델 생성중 아이템 추가
+    momentStore.addMoment(images.first);
+    // 스캔 데이터 초기화
+    imageStore.clear();
+
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const MomentsScreen()),
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.white,
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        elevation: 0,
-        title: const Text(
-          'Scan Object',
-          style: TextStyle(
-            color: Colors.black,
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('Object Name',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
-            const SizedBox(height: 8),
-            TextField(
-              onChanged: (value) => setState(() => _objectName = value),
-              decoration: InputDecoration(
-                hintText: 'Enter object name...',
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide(color: Colors.grey[300]!),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(color: Colors.blue),
-                ),
-              ),
-            ),
-            const SizedBox(height: 24),
-            Row(
-              children: [
-                Expanded(
-                  child: ElevatedButton.icon(
-                    onPressed: _showImageSourceDialog,
-                    icon: const Icon(Icons.camera_alt),
-                    label: const Text('Take Photos'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.blue,
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: ElevatedButton.icon(
-                    onPressed: _pickFromGallery,
-                    icon: const Icon(Icons.photo_library, color: Colors.blue),
-                    label: const Text('From Gallery'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.white,
-                      foregroundColor: Colors.blue,
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      side: const BorderSide(color: Colors.blue),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            if (_capturedImages.isNotEmpty) ...[
-              const SizedBox(height: 24),
-              Row(
-                children: [
-                  const Text('Captured Images',
-                      style:
-                          TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
-                  const Spacer(),
-                  Text('${_capturedImages.length}/6'),
-                ],
-              ),
-              const SizedBox(height: 8),
-              LinearProgressIndicator(
-                value: _capturedImages.length / 6,
-                backgroundColor: Colors.grey[300],
-                valueColor: const AlwaysStoppedAnimation<Color>(Colors.blue),
-              ),
-              const SizedBox(height: 16),
-              GridView.builder(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 2,
-                  crossAxisSpacing: 12,
-                  mainAxisSpacing: 12,
-                  childAspectRatio: 1,
-                ),
-                itemCount: 6,
-                itemBuilder: (context, index) => _buildImageSlot(index),
-              ),
-              const SizedBox(height: 24),
-              _buildTipsSection(),
-            ]
-          ],
-        ),
-      ),
-    );
-  }
+    final total = _labels.length;
 
-  Widget _buildImageSlot(int index) {
-    bool hasImage = index < _capturedImages.length;
-    String angleLabel =
-        index < _angleLabels.length ? _angleLabels[index] : 'Extra View';
+    return FutureBuilder<void>(
+      future: _initFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState != ConnectionState.done) {
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
 
-    return Container(
-      decoration: BoxDecoration(
-        color: hasImage ? Colors.transparent : Colors.grey[100],
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: hasImage ? Colors.blue : Colors.grey[300]!,
-          width: hasImage ? 2 : 1,
-        ),
-      ),
-      child: hasImage
-          ? Stack(
-              children: [
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(10),
-                  child: Image.file(_capturedImages[index], fit: BoxFit.cover),
-                ),
-                Positioned(
-                  bottom: 0,
-                  left: 0,
-                  right: 0,
+        final captured = context.watch<ImageStore>().images.length;
+
+        return Scaffold(
+          body: Stack(
+            children: [
+              CameraPreview(_controller),
+
+              // 상단 안내 텍스트
+              Positioned(
+                top: 48,
+                left: 0,
+                right: 0,
+                child: Center(
                   child: Container(
-                    padding: const EdgeInsets.symmetric(vertical: 4),
-                    color: Colors.black.withOpacity(0.7),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    color: Colors.black54,
                     child: Text(
-                      angleLabel,
-                      style: const TextStyle(color: Colors.white, fontSize: 12),
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
-                ),
-                Positioned(
-                  top: 8,
-                  right: 8,
-                  child: GestureDetector(
-                    onTap: () =>
-                        setState(() => _capturedImages.removeAt(index)),
-                    child: Container(
-                      padding: const EdgeInsets.all(4),
-                      decoration: const BoxDecoration(
-                        color: Colors.red,
-                        shape: BoxShape.circle,
+                      'Please scan: ${_labels[min(captured, total - 1)]}',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
                       ),
-                      child: const Icon(Icons.close,
-                          size: 16, color: Colors.white),
                     ),
                   ),
                 ),
-              ],
-            )
-          : Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.add_a_photo, color: Colors.grey[400], size: 32),
-                const SizedBox(height: 8),
-                Text(angleLabel,
-                    style: TextStyle(color: Colors.grey[600], fontSize: 12)),
-              ],
-            ),
-    );
-  }
+              ),
 
-  Widget _buildTipsSection() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.blue[50],
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.blue[200]!),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: const [
-              Icon(Icons.lightbulb_outline, color: Colors.blue),
-              SizedBox(width: 8),
-              Text('Photography Tips',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+              // progress 바
+              Positioned(
+                bottom: 120,
+                left: 16,
+                right: 16,
+                child: Column(
+                  children: [
+                    LinearProgressIndicator(
+                      value: captured / total,
+                      backgroundColor: Colors.white24,
+                      valueColor: const AlwaysStoppedAnimation<Color>(
+                        Colors.lightBlueAccent,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      '$captured / $total captured',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              // 버튼
+              Positioned(
+                bottom: 48,
+                left: 0,
+                right: 0,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    // 1. 뒤로가기버튼: 사진 재촬영
+                    FloatingActionButton(
+                      heroTag: 'backBtn',
+                      onPressed: captured > 0 ? _goBackStep : null,
+                      backgroundColor:
+                          captured > 0 ? Colors.orange : Colors.grey,
+                      child: const Icon(Icons.arrow_back),
+                    ),
+                    // 2. 촬영버튼 / (6장 전부 찍었을 때) 완료버튼
+                    if (captured < total) ...[
+                      FloatingActionButton(
+                        heroTag: 'captureBtn',
+                        onPressed: _takePhoto,
+                        backgroundColor:
+                            _isCapturing ? Colors.grey : Colors.blueAccent,
+                        child: _isCapturing
+                            ? const CircularProgressIndicator(
+                                color: Colors.white,
+                              )
+                            : const Icon(Icons.camera_alt),
+                      ),
+                    ] else ...[
+                      FloatingActionButton(
+                        heroTag: 'doneBtn',
+                        onPressed: _completeScan,
+                        backgroundColor: Colors.green,
+                        child: const Icon(Icons.check),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
             ],
           ),
-          const SizedBox(height: 8),
-          Text(
-            '• Take photos from different angles\n'
-            '• Ensure good lighting and clear background\n'
-            '• Keep the object in the center\n'
-            '• Avoid shadows and reflections',
-            style:
-                TextStyle(color: Colors.blue[700], fontSize: 14, height: 1.4),
-          )
-        ],
-      ),
-    );
-  }
-
-  void _showImageSourceDialog() {
-    showModalBottomSheet(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) => Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          ListTile(
-            leading: const Icon(Icons.camera_alt),
-            title: const Text('Camera'),
-            onTap: () {
-              Navigator.pop(context);
-              _takePicture();
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.photo_library),
-            title: const Text('Gallery'),
-            onTap: () {
-              Navigator.pop(context);
-              _pickFromGallery();
-            },
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _takePicture() async {
-    try {
-      final XFile? image = await _picker.pickImage(source: ImageSource.camera);
-      if (image != null) {
-        setState(() => _capturedImages.add(File(image.path)));
-      }
-    } catch (e) {
-      _showError('Failed to take picture: $e');
-    }
-  }
-
-  Future<void> _pickFromGallery() async {
-    try {
-      final List<XFile> images = await _picker.pickMultiImage();
-      if (images.isNotEmpty) {
-        setState(() {
-          for (var image in images) {
-            if (_capturedImages.length < 6) {
-              _capturedImages.add(File(image.path));
-            }
-          }
-        });
-      }
-    } catch (e) {
-      _showError('Failed to pick images: $e');
-    }
-  }
-
-  void _showError(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), backgroundColor: Colors.red),
+        );
+      },
     );
   }
 }

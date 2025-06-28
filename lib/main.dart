@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_native_splash/flutter_native_splash.dart';
+import 'package:momento/providers/image_store.dart';
+import 'package:momento/providers/moment_store.dart';
+import 'package:provider/provider.dart';
 import 'screens/root_screen.dart';
 
 Future<void> main() async {
@@ -11,7 +14,16 @@ Future<void> main() async {
 
   // 초기화 작업이 끝났을 때 Splash화면을 제거함.
   FlutterNativeSplash.remove();
-  runApp(MyApp());
+
+  runApp(
+    MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => ImageStore()),
+        ChangeNotifierProvider(create: (_) => MomentStore()),
+      ],
+      child: const MyApp(),
+    ),
+  );
 }
 
 class MyApp extends StatelessWidget {

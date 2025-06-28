@@ -29,19 +29,18 @@
       import * as THREE from "three";
       import { GLTFLoader } from "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/loaders/GLTFLoader.js";
       import { DRACOLoader } from "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/loaders/DRACOLoader.js";
-      import { OrbitControls } from "https://unpkg.com/three@0.112/examples/jsm/controls/OrbitControls.js";
-
+      import { OrbitControls } from "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/controls/OrbitControls.js";
       // 전역 에러 캡처
       window.onerror = (msg, src, line, col, err) => {
         console.error(
-          "👀 window.onerror:",
+          " window.onerror:",
           msg,
           src + ":" + line + ":" + col,
           err
         );
       };
       window.addEventListener("unhandledrejection", (ev) => {
-        console.error("👀 unhandledrejection:", ev.reason);
+        console.error("unhandledrejection:", ev.reason);
       });
 
       console.log("시작");
@@ -90,30 +89,63 @@
       // fetch → parse
       console.log("fetching..");
       fetch(modelPath)
-        .then((res) => {
-          if (!res.ok) throw new Error(`fetch 실패: ${res.status}`);
-          console.log("fetch 성공");
-          return res.arrayBuffer();
-        })
-        .then((buffer) => {
-          console.log("arrayBuffer 크기:", buffer.byteLength);
+        .then((r) => r.arrayBuffer())
+        .then((data) =>
           loader.parse(
-            buffer,
+            data,
             "",
             (gltf) => {
-              console.log("parse 성공");
-              gltf.scene.scale.set(5, 5, 5);
-              scene.add(gltf.scene);
+              const root = gltf.scene;
+              scene.add(root);
+
+              // 1) 모델의 바운딩 박스 계산
+              const box = new THREE.Box3().setFromObject(root);
+              const center = box.getCenter(new THREE.Vector3());
+              const size = box.getSize(new THREE.Vector3()).length();
+
+              // 2) 모델을 원점 기준으로 이동
+              root.position.sub(center);
+
+              // 3) 카메라 거리 자동 설정 (fov 보정)
+              const halfFov = THREE.MathUtils.degToRad(camera.fov * 0.5);
+              const dist = (size * 0.3) / Math.tan(halfFov);
+              camera.position.copy(new THREE.Vector3(dist, dist, dist));
+
+              // 4) 컨트롤 타겟도 원점으로
+              controls.target.set(0, 0, 0);
+              controls.update();
+
               animate();
             },
-            (err) => {
-              console.error("parse 실패:", err.message || err);
-            }
-          );
-        })
-        .catch((err) => {
-          console.error("fetch/parse 실패:", err.message || err);
-        });
+            (e) => console.error("parse error:", e)
+          )
+        )
+        .catch((e) => console.error("load error:", e));
+      //   fetch(modelPath)
+      //     .then((res) => {
+      //       if (!res.ok) throw new Error(`fetch 실패: ${res.status}`);
+      //       console.log("fetch 성공");
+      //       return res.arrayBuffer();
+      //     })
+      //     .then((buffer) => {
+      //       console.log("arrayBuffer 크기:", buffer.byteLength);
+      //       loader.parse(
+      //         buffer,
+      //         "",
+      //         (gltf) => {
+      //           console.log("parse 성공");
+      //           gltf.scene.scale.set(5, 5, 5);
+      //           scene.add(gltf.scene);
+      //           animate();
+      //         },
+      //         (err) => {
+      //           console.error("parse 실패:", err.message || err);
+      //         }
+      //       );
+      //     })
+      //     .catch((err) => {
+      //       console.error("fetch/parse 실패:", err.message || err);
+      //     });
 
       function animate() {
         requestAnimationFrame(animate);

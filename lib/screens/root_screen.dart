@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'my_momento_screen.dart';
+import 'home_screen.dart';
 import 'scan_screen.dart';
-import 'model_view_screen.dart';
+import 'moments_screen.dart';
 import 'profile_screen.dart';
 
 class RootScreen extends StatefulWidget {
@@ -15,9 +15,9 @@ class _RootScreenState extends State<RootScreen> {
   int _currentIndex = 0;
 
   final List<Widget> _screens = const [
-    MyMomentoScreen(),
+    HomeScreen(),
     ScanScreen(),
-    ModelViewScreen(),
+    MomentsScreen(),
     ProfileScreen(),
   ];
 

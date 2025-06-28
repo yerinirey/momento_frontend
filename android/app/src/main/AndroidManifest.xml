@@ -1,8 +1,18 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- o3d -->
+    <uses-permission android:name="android.permission.INTERNET"/>
     <application
         android:label="momento"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/ic_launcher"
+        android:usesCleartextTraffic="true"
+        android:hardwareAccelerated="true"
+        >
+        <!-- 
+            webView 링크 실행 시 아래의 에러 발생
+            net::ERR_CLEARTEXT_NOT_PERMITTED
+            => !
+            => android:usesCleartextTraffic 추가-->
         <activity
             android:name=".MainActivity"
             android:exported="true"
